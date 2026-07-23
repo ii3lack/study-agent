@@ -14,3 +14,7 @@ wheels/
 
 # Agent work directory
 images/
+
+# Code Agent
+.claude/
+.codex/
