@@ -11,3 +11,6 @@ wheels/
 
 # Environment variables（含密钥，切勿提交）
 .env
+
+# Agent work directory
+images/
