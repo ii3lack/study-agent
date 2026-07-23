@@ -1,4 +1,5 @@
 import os
+import time
 from typing import cast
 
 from dotenv import load_dotenv
@@ -31,11 +32,6 @@ agent_init = {
 messages = [agent_init]
 
 
-import time
-
-console = Console()
-
-
 def _thinking_panel(reasoning: str) -> Panel:
     """思考进行中：只显示最新一段，避免刷屏。"""
     return Panel(
@@ -50,7 +46,7 @@ def _collapsed_thinking(elapsed: float) -> Text:
     return Text(f"💭 已深度思考 {elapsed:.1f} 秒", style="dim italic")
 
 
-def stream_chat(response) -> str:
+def stream_chat(response) -> tuple[str, str]:
     """流式渲染：折叠的思考过程 + Markdown 正文，返回完整回答。"""
     reasoning = ""
     answer = ""
@@ -81,7 +77,7 @@ def stream_chat(response) -> str:
                 parts.append(Markdown(answer))
                 live.update(Group(*parts))
 
-    return answer
+    return answer, reasoning
 
 
 def chat_with_agent(messages: list[dict[str, str]]) -> None:
@@ -98,8 +94,8 @@ def chat_with_agent(messages: list[dict[str, str]]) -> None:
             temperature=1.0,  # 控制输出的随机性
         ),
     )
-    answer = stream_chat(response)  # ← 折叠思考 + 渲染 Markdown
-    messages.append({"role": "assistant", "content": answer})
+    answer, reasoning = stream_chat(response)  # ← 折叠思考 + 渲染 Markdown
+    messages.append({"role": "assistant", "content": answer, "reasoning": reasoning})
 
 
 def main() -> None:
