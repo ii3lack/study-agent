@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import pprint
 from typing import cast
 
 from dotenv import load_dotenv
@@ -68,10 +69,11 @@ def _collapsed_thinking(elapsed: float) -> Text:
     return Text(f"💭 已深度思考 {elapsed:.1f} 秒", style="dim italic")
 
 
-def stream_chat(response) -> tuple[str, str]:
-    """流式渲染：折叠的思考过程 + Markdown 正文，返回完整回答。"""
+def stream_chat(response) -> tuple[str, str, dict]:
+    """流式渲染一次回复，返回 (正文, 思考, 重组好的 tool_calls)。"""
     reasoning = ""
     answer = ""
+    tool_calls_acc = {}  # index -> {"id", "name", "arguments"}  ← 关键：累积碎片
     folded = False
     start = time.perf_counter()
 
@@ -79,63 +81,107 @@ def stream_chat(response) -> tuple[str, str]:
         console=console, refresh_per_second=12, vertical_overflow="ellipsis"
     ) as live:
         for chunk in response:
+            pprint.pprint(chunk)
+            pprint.pprint("$" * 50)
+            if not chunk.choices:
+                continue
             delta = chunk.choices[0].delta
-
-            # 1) 思考内容（GLM 思考模式放在 reasoning_content）
+            pprint.pprint(delta)
+            pprint.pprint("*" * 50)
+            # 思考碎片
             piece = getattr(delta, "reasoning_content", None)
             if piece:
                 reasoning += piece
-                live.update(_thinking_panel(reasoning))
+                # live.update(_thinking_panel(reasoning))
                 continue
 
-            # 2) 正式回答
+            # 正文碎片
             if delta.content:
                 if reasoning and not folded:
-                    folded = True  # 第一帧回答到来 → 折叠思考
+                    folded = True
                 answer += delta.content
                 parts = []
                 if folded:
                     parts.append(_collapsed_thinking(time.perf_counter() - start))
                 parts.append(Markdown(answer))
-                live.update(Group(*parts))
+                # live.update(Group(*parts))
 
-    return answer, reasoning
+            # 工具调用碎片：按 index 累积，把 name 和 arguments 拼回完整调用
+            if delta.tool_calls:
+                for tc in delta.tool_calls:
+                    slot = tool_calls_acc.setdefault(
+                        tc.index, {"id": "", "name": "", "arguments": ""}
+                    )
+                    if tc.id:
+                        slot["id"] = tc.id
+                    if tc.function and tc.function.name:
+                        slot["name"] = tc.function.name
+                    if tc.function and tc.function.arguments:
+                        slot[
+                            "arguments"
+                        ] += tc.function.arguments  # ← 参数是一片片拼接的
+
+    return answer, reasoning, tool_calls_acc
 
 
 def chat_with_agent(messages):
     while True:
-        response = client.chat.completions.create(
-            model="glm-4.7",
-            messages=messages,
-            tools=tools,
-            tool_choice="auto",
-            stream=False,
-            thinking={"type": "enabled"},
-            max_tokens=65536,
-            temperature=1.0,
+        pprint.pprint(messages)
+        response = cast(
+            StreamResponse,
+            client.chat.completions.create(
+                model="glm-4.7",
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                stream=True,  # ← 让"回答"流式，靠的就是它
+                thinking={"type": "enabled"},
+                max_tokens=65536,
+                temperature=1.0,
+            ),
         )
-        message = response.choices[0].message  # 非流式:直接拿 message
+        answer, reasoning, tool_calls_acc = stream_chat(response)
 
-        if message.tool_calls:  # 模型要调工具
-            messages.append(message)  # ① 先存这条带 tool_calls 的 assistant 消息
-            for tool_call in message.tool_calls:  # ② 逐个执行(别写死 get_weather!)
-                name = tool_call.function.name
-                args = json.loads(tool_call.function.arguments)
+        if tool_calls_acc:  # 模型要调工具
+            print("模型要调工具：")
+            print(tool_calls_acc)
+            # ① 存这轮带 tool_calls 的 assistant 消息
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": answer,  # 调工具时通常为空
+                    "tool_calls": [
+                        {
+                            "id": s["id"],
+                            "type": "function",
+                            "function": {
+                                "name": s["name"],
+                                "arguments": s["arguments"],
+                            },
+                        }
+                        for s in tool_calls_acc.values()
+                    ],
+                }
+            )
+            # ② 逐个执行工具，存结果
+            for s in tool_calls_acc.values():
                 try:
-                    result = TOOL_FUNCTIONS[name](**args)
+                    args = json.loads(s["arguments"])
+                    result = TOOL_FUNCTIONS[s["name"]](**args)
                 except Exception as e:
-                    result = f"工具 {name} 执行错误：{e}"
+                    result = f"工具 {s['name']} 执行错误：{e}"
                 messages.append(
-                    {  # ③ 存工具结果
+                    {
                         "role": "tool",
-                        "tool_call_id": tool_call.id,
+                        "tool_call_id": s["id"],
                         "content": str(result),
                     }
                 )
-            continue  # ④ 回去再问模型
-        else:  # 无工具调用 = 最终答案
-            console.print(Markdown(message.content))
-            messages.append({"role": "assistant", "content": message.content})
+            continue  # ③ 带着工具结果回去再问模型
+        else:  # 无工具 = 最终答案
+            messages.append(
+                {"role": "assistant", "content": answer, "reasoning_content": reasoning}
+            )
             break
 
 
@@ -152,6 +198,10 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
+    except KeyboardInterrupt:
+        # Ctrl+C：KeyboardInterrupt 继承自 BaseException 而非 Exception，
+        # 必须单独捕获，否则会打印原始 traceback
+        console.print("\n👋 再见！")
     except Exception as e:
         console.print(e)
         console.print("\n👋 再见！")
