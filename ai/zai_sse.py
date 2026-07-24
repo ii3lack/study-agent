@@ -66,20 +66,9 @@ def stream_chat(response) -> tuple[str, str, dict]:
     """
     reasoning = ""
     answer = ""
+    collapsed_thinking = False
     tool_calls_acc = {}  # index -> {"id", "name", "arguments"}  ← 关键：累积碎片
     start = time.perf_counter()
-
-    def final_view():
-        """最终定型：折叠思考 + 正文；若正文为空，则把思考当正文显示。"""
-        if answer:
-            parts = []
-            if reasoning:
-                parts.append(_collapsed_thinking(time.perf_counter() - start))
-            parts.append(Markdown(answer))
-            return Group(*parts)
-        if reasoning:  # 模型把答案放进了思考（content 为空）
-            return Markdown(reasoning)
-        return Markdown("_(无回复)_")
 
     with Live(
         console=console, refresh_per_second=12, vertical_overflow="ellipsis"
@@ -91,14 +80,21 @@ def stream_chat(response) -> tuple[str, str, dict]:
 
             # 思考碎片
             piece = getattr(delta, "reasoning_content", None)
-            if piece:
+            if piece and not collapsed_thinking:
                 reasoning += piece
                 live.update(_thinking_panel(reasoning))
+                continue
 
             # 正文碎片
             if delta.content:
+                if reasoning and not collapsed_thinking:
+                    collapsed_thinking = True  # 第一帧回答到来 → 折叠思考
                 answer += delta.content
-                live.update(final_view())  # 正文一来就折叠思考、显示正文
+                parts = []
+                if collapsed_thinking:
+                    parts.append(_collapsed_thinking(time.perf_counter() - start))
+                parts.append(Markdown(answer))
+                live.update(Group(*parts))
 
             # 工具调用碎片：按 index 累积，把 name 和 arguments 拼回完整调用
             if delta.tool_calls:
@@ -112,8 +108,6 @@ def stream_chat(response) -> tuple[str, str, dict]:
                         slot["name"] = tc.function.name
                     if tc.function and tc.function.arguments:
                         slot["arguments"] += tc.function.arguments  # ← 参数一片片拼接
-
-        live.update(final_view())  # 流结束：最终定型（兜底，确保一定折叠/显示）
 
     return answer, reasoning, tool_calls_acc
 
