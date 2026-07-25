@@ -1,43 +1,44 @@
-import os
 import json
+import os
 import time
-from typing import cast
 
-from dotenv import load_dotenv
 from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.prompt import Prompt
 from rich.text import Text
-from .client import Client
+from rich.tree import Tree
 
-from tools.markdown_tools import (
-    read_markdown,
-    write_markdown,
+from .client import Client
+from tools.file_tools import (
+    edit_file,
+    edit_file_tool,
     list_files,
-)  # 把函数也导入
-from tools.markdown_tools import (
-    read_markdown_tool,
-    write_markdown_tool,
     list_files_tool,
+    read_file,
+    read_file_tool,
+    write_file,
+    write_file_tool,
 )
 
 TOOL_FUNCTIONS = {
-    "read_markdown": read_markdown,
-    "write_markdown": write_markdown,
+    "read_file": read_file,
+    "write_file": write_file,
     "list_files": list_files,
+    "edit_file": edit_file
 }
 
 console = Console()
-
+tree = Tree("📁 work_space")
 
 work_space_dir = os.path.join(os.getcwd(), "work_space")
 
-tools = [read_markdown_tool, write_markdown_tool, list_files_tool]
+tools = [read_file_tool, write_file_tool, list_files_tool, edit_file_tool]
 
 agent_init = {
     "role": "system",
-    "content": f"你是专业视觉创作团队，请使用中文回答用户的问题, 你工作的文件路径是 {work_space_dir}， 不要有任何指令想要操作这个区域外的任何文件",
+    "content": "你是专业视觉创作团队，请使用中文回答用户的问题",
 }
 
 messages = [agent_init]
@@ -87,7 +88,7 @@ def stream_chat(response) -> tuple[str, str, dict]:
 
             # 正文碎片
             if delta.content:
-                if reasoning and not collapsed_thinking:
+                if not collapsed_thinking:
                     collapsed_thinking = True  # 第一帧回答到来 → 折叠思考
                 answer += delta.content
                 parts = []
@@ -98,6 +99,13 @@ def stream_chat(response) -> tuple[str, str, dict]:
 
             # 工具调用碎片：按 index 累积，把 name 和 arguments 拼回完整调用
             if delta.tool_calls:
+                # 收到工具调用时，也要折叠思考
+                if not collapsed_thinking and reasoning:
+                    collapsed_thinking = True
+                    live.update(Group(
+                        _collapsed_thinking(time.perf_counter() - start),
+                        Markdown("_(正在调用工具…)_")
+                    ))
                 for tc in delta.tool_calls:
                     slot = tool_calls_acc.setdefault(
                         tc.index, {"id": "", "name": "", "arguments": ""}
@@ -109,15 +117,22 @@ def stream_chat(response) -> tuple[str, str, dict]:
                     if tc.function and tc.function.arguments:
                         slot["arguments"] += tc.function.arguments  # ← 参数一片片拼接
 
+    # 流结束：如果只有思考没有正文，也折叠思考，显示思考内容作为回答
+    if not answer and reasoning and not tool_calls_acc:
+        collapsed_thinking = True
+        # 将 reasoning 作为 answer 返回
+        answer = reasoning
+        reasoning = ""
+
     return answer, reasoning, tool_calls_acc
 
 
-def chat_with_agent(messages, max_turns=10):
+def chat_with_agent(messages, max_turns=3):
     """单个用户问题内的 agent 循环：请求 →（调工具 → 再请求）* → 最终答案。
 
     max_turns 限制最多向模型请求几轮，防止模型陷入无限调工具的死循环。
     """
-    for turn in range(max_turns):
+    for _turn in range(max_turns):
         response = ai_client.chat(
             model="glm-4.7",
             messages=messages,
@@ -179,6 +194,6 @@ def main() -> None:
     console.print("您好！我是 dry-light，为视觉创作者打造的 AI Agent 应用")
     console.print("按 Ctrl+C 退出")
     while True:
-        ask = input("USER:  ")
+        ask = Prompt.ask('👨‍🚀 用户')
         messages.append({"role": "user", "content": ask})
         chat_with_agent(messages)
