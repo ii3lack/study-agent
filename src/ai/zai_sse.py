@@ -26,7 +26,7 @@ TOOL_FUNCTIONS = {
     "read_file": read_file,
     "write_file": write_file,
     "list_files": list_files,
-    "edit_file": edit_file
+    "edit_file": edit_file,
 }
 
 console = Console()
@@ -110,10 +110,12 @@ def stream_chat(response) -> tuple[str, str, dict]:
                 # 收到工具调用时，也要折叠思考
                 if not collapsed_thinking and reasoning:
                     collapsed_thinking = True
-                    live.update(Group(
-                        _collapsed_thinking(time.perf_counter() - start),
-                        Markdown("_(正在调用工具…)_")
-                    ))
+                    live.update(
+                        Group(
+                            _collapsed_thinking(time.perf_counter() - start),
+                            Markdown("_(正在调用工具…)_"),
+                        )
+                    )
                 for tc in delta.tool_calls:
                     slot = tool_calls_acc.setdefault(
                         tc.index, {"id": "", "name": "", "arguments": ""}
@@ -202,6 +204,6 @@ def main() -> None:
     console.print("您好！我是 dry-light，为视觉创作者打造的 AI Agent 应用")
     console.print("按 Ctrl+C 退出")
     while True:
-        ask = Prompt.ask('👨‍🚀 用户')
+        ask = Prompt.ask("👨‍🚀 用户")
         messages.append({"role": "user", "content": ask})
         chat_with_agent(messages)

@@ -1,0 +1,56 @@
+{
+    // ========================================
+    // Python 环境
+    // ========================================
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "python.terminal.activateEnvironment": true,
+
+    // ========================================
+    // Black Formatter（代码格式化）
+    // ========================================
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+        }
+    },
+    "black-formatter.args": ["--line-length=88"],
+
+    // ========================================
+    // Pyright / Pylance（类型检查）
+    // ========================================
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.inlayHints.functionReturnTypes": true,
+    "python.analysis.inlayHints.variableTypes": true,
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.indexing": true,
+
+    // ========================================
+    // 编辑器辅助
+    // ========================================
+    "editor.rulers": [88],
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "**/.ruff_cache": true
+    },
+    "files.associations": {
+        "*.env": "dotenv"
+    },
+
+    // ========================================
+    // 搜索排除（加速全局搜索）
+    // ========================================
+    "search.exclude": {
+        "**/.venv": true,
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "**/.ruff_cache": true
+    },
+    "files.watcherExclude": {
+        "**/.venv/**": true,
+        "**/__pycache__/**": true
+    }
+}

@@ -38,6 +38,7 @@ def _check_sandbox(file_path: str) -> Path | str:
         f"\n请使用 work_space/ 下的路径。"
     )
 
+
 read_file_tool = {
     "type": "function",  # 固定:表示这是个函数工具
     "function": {
@@ -153,6 +154,7 @@ edit_file_tool = {
         },
     },
 }
+
 
 def edit_file(file_path: str, start_line: int, end_line: int, new_content: str) -> str:
     """把 [start_line, end_line) 这个行范围替换成 new_content。

@@ -11,7 +11,7 @@ from src.ai import zai_sse
 
 def main():
     console = Console()
-    console.print('Start Study AI Agent')
+    console.print("Start Study AI Agent")
     try:
         zai_sse.main()
     except KeyboardInterrupt:
