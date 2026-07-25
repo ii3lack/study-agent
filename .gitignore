@@ -1,21 +1,42 @@
-# Python-generated files
+# Python 编译缓存
 __pycache__/
-*.py[oc]
+*.py[co]
+*.pyc
+*.pyo
+*.egg-info
+
+# 构建产物
 build/
 dist/
 wheels/
-*.egg-info
 
-# Virtual environments
+# 日志文件
+*.log
+
+# 虚拟环境
 .venv
+venv/
 
-# Environment variables（含密钥，切勿提交）
+# 密钥文件（切勿提交）
 .env
 
-# Agent work directory
-images/
-work_space/
+# 工具缓存
+.ruff_cache/
 
-# Code Agent
+# AI 工作目录（工具操作的文件空间）
+/work_space/
+
+# Agent 配置（含敏感信息）
 .claude/
 .codex/
+
+# 运行时数据（日志/记忆/会话）
+/storage/
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# Node.js 遗留
+node_modules/
+package-lock.json

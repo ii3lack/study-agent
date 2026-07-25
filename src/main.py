@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from rich.console import Console
-from ai import zai_sse
+from src.ai import zai_sse
 
 
 def main():

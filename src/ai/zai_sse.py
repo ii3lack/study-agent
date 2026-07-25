@@ -11,7 +11,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from .client import Client
-from tools.file_tools import (
+from ..tools.file_tools import (
     edit_file,
     edit_file_tool,
     list_files,
@@ -43,7 +43,15 @@ agent_init = {
 
 messages = [agent_init]
 
-ai_client = Client()
+ai_client = None
+
+
+def _get_client() -> Client:
+    """懒加载：首次调用时初始化 ai client（确保环境变量已加载）。"""
+    global ai_client
+    if ai_client is None:
+        ai_client = Client()
+    return ai_client
 
 
 def _thinking_panel(reasoning: str) -> Panel:
@@ -133,7 +141,7 @@ def chat_with_agent(messages, max_turns=3):
     max_turns 限制最多向模型请求几轮，防止模型陷入无限调工具的死循环。
     """
     for _turn in range(max_turns):
-        response = ai_client.chat(
+        response = _get_client().chat(
             model="glm-4.7",
             messages=messages,
             tools=tools,
