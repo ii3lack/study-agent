@@ -10,6 +10,7 @@ from rich.prompt import Prompt
 from rich.text import Text
 from rich.tree import Tree
 
+from src.session import list_sessions
 from .client import Client
 from ..tools.file_tools import (
     edit_file,
@@ -204,6 +205,6 @@ def main() -> None:
     console.print("您好！我是 dry-light，为视觉创作者打造的 AI Agent 应用")
     console.print("按 Ctrl+C 退出")
     while True:
-        ask = Prompt.ask("👨‍🚀 用户")
+        ask = Prompt.ask("> 用户")
         messages.append({"role": "user", "content": ask})
         chat_with_agent(messages)
