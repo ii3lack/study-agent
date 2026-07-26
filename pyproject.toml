@@ -5,11 +5,11 @@ description = "学习开发 AI Agent 应用"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "langfuse>=4.14.1",
-    "openai>=2.48.0",
-    "python-dotenv>=1.2.2",
-    "rich>=15.0.0",
-    "zai-sdk>=0.2.3",
+  "langfuse>=4.14.1",
+  "openai>=2.48.0",
+  "python-dotenv>=1.2.2",
+  "rich>=15.0.0",
+  "zai-sdk>=0.2.3",
 ]
 
 [tool.black]
@@ -21,6 +21,4 @@ profile = "black"
 line_length = 88
 
 [dependency-groups]
-dev = [
-    "black>=26.5.1",
-]
+dev = ["black>=26.5.1"]

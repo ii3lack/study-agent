@@ -41,3 +41,10 @@ Thumbs.db
 node_modules/
 package-lock.json
 
+# Windows 保留设备名伪文件（Git Bash 下表现为 0 字节文件，无法删除）
+nul
+com1
+com2
+lpt1
+aux
+
