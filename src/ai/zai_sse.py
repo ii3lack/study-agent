@@ -10,7 +10,6 @@ from rich.prompt import Prompt
 from rich.text import Text
 from rich.tree import Tree
 
-from src.session import list_sessions
 from .client import Client
 from ..tools.file_tools import (
     edit_file,
