@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
   "langfuse>=4.14.1",
   "openai>=2.48.0",
+  "pytest>=9.1.1",
   "python-dotenv>=1.2.2",
   "rich>=15.0.0",
   "zai-sdk>=0.2.3",
@@ -21,4 +22,9 @@ profile = "black"
 line_length = 88
 
 [dependency-groups]
-dev = ["black>=26.5.1"]
+dev = ["black>=26.5.1", "pytest>=8.0", "pytest-mock>=3.14"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers"
