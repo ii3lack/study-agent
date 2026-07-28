@@ -53,7 +53,11 @@ def main():
                     {
                         "role": "system",
                         "content": DEFAULT_SYSTEM_PROMPT,
-                    }
+                    },
+                    {
+                        "role": "user",
+                        "content": user_input,
+                    },
                 ],
             )
             s_info = state.load_session(s_id)
@@ -68,10 +72,7 @@ def main():
                         "role": "system",
                         "content": DEFAULT_SYSTEM_PROMPT,
                     },
-                    {
-                        "role": "user",
-                        "content": "请写一个关于机器学习的程序",
-                    },
+                    {"role": "user", "content": user_input},
                 ],
                 metadata={},
             )
