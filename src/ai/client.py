@@ -6,7 +6,7 @@ from zai import ZhipuAiClient
 
 
 class Client:
-    """Langfuse 的 wrapper，自动采集 trace。"""
+    """ai provider。"""
 
     def __init__(self):
         self.client = ZhipuAiClient(
@@ -14,5 +14,5 @@ class Client:
         )
 
     def chat(self, *args, **kwargs):
-        """调用 Langfuse 的 ChatCompletion.create 方法。"""
+        """调用 zai 的 ChatCompletion.create 方法。"""
         return self.client.chat.completions.create(*args, **kwargs)

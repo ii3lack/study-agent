@@ -70,17 +70,20 @@ def test_list_ordered_by_updated_at_desc(store: SessionStore) -> None:
     sid_a = store.create_session("first", "glm-4.7", [_sys()])
     # 时间戳精确到秒,人为 sleep 保证 mtime 递增
     import time
+
     time.sleep(1.05)
     sid_c = store.create_session("third", "glm-4.7", [_sys()])
     result = store.list_sessions()
-    assert result[0].session_id == sid_c   # 最新的最前
+    assert result[0].session_id == sid_c  # 最新的最前
     assert result[-1].session_id == sid_a  # 最旧的最后
 
 
-def test_list_ignores_dirs_without_index(store: SessionStore, tmp_sessions_dir: Path) -> None:
+def test_list_ignores_dirs_without_index(
+    store: SessionStore, tmp_sessions_dir: Path
+) -> None:
     """没有 index.json 的目录应该被忽略(不崩)。"""
     store.create_session("a", "glm-4.7", [_sys()])  # 合法
-    (tmp_sessions_dir / "garbage_dir").mkdir()      # 非法
+    (tmp_sessions_dir / "garbage_dir").mkdir()  # 非法
     result = store.list_sessions()
     assert len(result) == 1
 
