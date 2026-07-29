@@ -25,7 +25,6 @@ from src.agent.runner import (
 )
 from src.agent.state import AgentState, DEFAULT_SYSTEM_PROMPT
 
-
 # ============================================================
 # Fake 对象 —— 模拟 zai client 的流式返回
 # ============================================================
@@ -294,3 +293,63 @@ def test_max_turns_exceeded_emits_error():
 
     # chat() 刚好被调了 max_turns 次
     assert client._call_count == 2
+
+
+# ============================================================
+# 测试 5：LLM 调用抛异常 → 降级成 Error，RunEnd 仍在最后
+# ============================================================
+# 远程 LLM 的网络超时 / 429 / 5xx 是常态。订阅者依赖 RunEnd 做收尾
+# （刷新 UI、落盘、释放锁），所以异常不能裸逃出 run()。
+
+
+class BrokenClient:
+    """chat() 总是抛异常，模拟网络故障。"""
+
+    def chat(self, **kwargs):
+        raise RuntimeError("network down")
+
+
+def test_llm_exception_emits_error_and_runend():
+    runner = Runner(client=BrokenClient(), tools=[], tool_fns={})
+    state = _state()
+
+    events = list(runner.run(state, user_input="hi"))
+
+    errors = [e for e in events if isinstance(e, Error)]
+    assert len(errors) == 1
+    assert "LLM 调用失败" in errors[0].message
+    # RunEnd 必须是最后一个事件
+    assert isinstance(events[-1], RunEnd)
+
+
+def test_unknown_tool_reports_missing_and_lists_available():
+    # 第 1 轮：模型返回一个【未注册】的工具名
+    turn1 = [
+        FakeChunk(
+            FakeDelta(
+                tool_calls=[
+                    FakeToolCall(
+                        index=0, id="call_1", name="no_such_tool", arguments="{}"
+                    ),
+                ]
+            )
+        )
+    ]
+    # 第 2 轮：模型看到错误后给出最终回答（不再调工具）→ 循环退出
+    turn2 = [FakeChunk(FakeDelta(content="抱歉，没有这个工具。"))]
+    client = FakeClient([turn1, turn2])
+
+    runner = Runner(
+        client=client,
+        tools=[],
+        tool_fns={"read_file": lambda **k: "ok"},  # 只注册 read_file
+        max_turns=5,
+    )
+    state = _state()
+    events = list(runner.run(state, "x"))
+
+    results = [e for e in events if isinstance(e, ToolResult)]
+    assert len(results) == 1
+    assert "不存在" in results[0].content
+    assert "read_file" in results[0].content  # 要列出可用工具
+    assert isinstance(events[-1], RunEnd)  # 且不能崩

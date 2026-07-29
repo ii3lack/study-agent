@@ -6,9 +6,7 @@ from pathlib import Path
 _PROJECT_ROOT = Path(os.getcwd()).resolve()
 ALLOWED_ROOTS = [
     _PROJECT_ROOT / "work_space",
-    _PROJECT_ROOT / "work_space" / "*",  # 允许子目录
     _PROJECT_ROOT / "storage",
-    _PROJECT_ROOT / "storage" / "*",  # 允许子目录
 ]
 
 

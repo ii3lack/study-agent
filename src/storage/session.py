@@ -28,6 +28,7 @@ class SessionNotFound(FileNotFoundError):
 @dataclass(frozen=True)
 class SessionInfo:
     """会话元数据 —— list() 的返回元素。"""
+
     session_id: str
     session_name: str
     created_at: str
@@ -105,6 +106,27 @@ class SessionStore:
         if not index.exists():
             raise SessionNotFound(f"Session {session_id} not found")
         return json.loads(index.read_text(encoding="utf-8"))
+
+    def save_session(self, session_id: str, messages: list[dict]) -> None:
+        """回写会话消息,并刷新 updated_at。
+
+        约束与 create_session 一致:messages 至少 1 条,且第一条 role 必须是 system。
+        """
+        if not messages:
+            raise SessionError("messages 不能为空")
+        if messages[0].get("role") != "system":
+            raise SessionError("messages 第一条必须是 system")
+
+        index = self.sessions_dir / session_id / "index.json"
+        if not index.exists():
+            raise SessionNotFound(f"Session {session_id} not found")
+        data = json.loads(index.read_text(encoding="utf-8"))
+        data["messages"] = messages
+        data["updated_at"] = _now()
+        index.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     def delete_session(self, session_id: str) -> None:
         """删除整个会话目录。"""

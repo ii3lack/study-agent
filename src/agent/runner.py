@@ -18,7 +18,6 @@ from typing import Iterator
 
 from src.agent.state import AgentState
 
-
 # ============================================================
 # Event 类型 —— Runner 和外部世界的唯一通信方式
 # ============================================================
@@ -116,9 +115,7 @@ class Runner:
 
     # ---- 核心方法 ----
 
-    def run(
-        self, state: AgentState, user_input: str | None = None
-    ) -> Iterator[Event]:
+    def run(self, state: AgentState, user_input: str | None = None) -> Iterator[Event]:
         """执行 agent 循环，yield 事件流。
 
         对应 zai_sse.py 第 140-199 行的 chat_with_agent()，
@@ -133,86 +130,92 @@ class Runner:
             state.messages.append({"role": "user", "content": user_input})
 
         # ---- 对应 zai_sse.py 第 145 行：for _turn in range(max_turns) ----
-        for turn in range(self.max_turns):
-            yield TurnStart(turn=turn)
+        # ★ try 包住整个循环：LLM 调用抛异常（网络超时 / 429 / 5xx）时
+        #   也要降级成 Error + RunEnd，否则 RunEnd 的「最后一定有它」保证失效
+        try:
+            for turn in range(self.max_turns):
+                yield TurnStart(turn=turn)
 
-            # 调一次 LLM，流式拿 token，同时累积 tool_calls
-            for token in self._stream_one_turn(state):
-                yield token  # 透传给订阅者
+                # 调一次 LLM，流式拿 token，同时累积 tool_calls
+                for token in self._stream_one_turn(state):
+                    yield token  # 透传给订阅者
 
-            # 流结束后，从 self 上读累积结果
-            answer = self._answer
-            reasoning = self._reasoning
-            tool_calls_acc = self._tool_calls_acc
+                # 流结束后，从 self 上读累积结果
+                answer = self._answer
+                reasoning = self._reasoning
+                tool_calls_acc = self._tool_calls_acc
 
-            # ---- 对应 zai_sse.py 第 131-136 行：只有思考没有正文 ----
-            if not answer and reasoning and not tool_calls_acc:
-                answer = reasoning
-                reasoning = ""
+                # ---- 对应 zai_sse.py 第 131-136 行：只有思考没有正文 ----
+                if not answer and reasoning and not tool_calls_acc:
+                    answer = reasoning
+                    reasoning = ""
 
-            # ---- 对应 zai_sse.py 第 158-162 行：无工具 = 最终答案 ----
-            if not tool_calls_acc:
+                # ---- 对应 zai_sse.py 第 158-162 行：无工具 = 最终答案 ----
+                if not tool_calls_acc:
+                    state.messages.append(
+                        {
+                            "role": "assistant",
+                            "content": answer,
+                            "reasoning_content": reasoning,
+                        }
+                    )
+                    yield TurnEnd(turn=turn)
+                    break  # ← 自然退出
+
+                # ---- 对应 zai_sse.py 第 165-181 行：存 assistant + tool_calls ----
                 state.messages.append(
                     {
                         "role": "assistant",
                         "content": answer,
-                        "reasoning_content": reasoning,
+                        "tool_calls": [
+                            {
+                                "id": s["id"],
+                                "type": "function",
+                                "function": {
+                                    "name": s["name"],
+                                    "arguments": s["arguments"],
+                                },
+                            }
+                            for s in tool_calls_acc.values()
+                        ],
                     }
                 )
-                yield TurnEnd(turn=turn)
-                break  # ← 自然退出
 
-            # ---- 对应 zai_sse.py 第 165-181 行：存 assistant + tool_calls ----
-            state.messages.append(
-                {
-                    "role": "assistant",
-                    "content": answer,
-                    "tool_calls": [
-                        {
-                            "id": s["id"],
-                            "type": "function",
-                            "function": {
-                                "name": s["name"],
-                                "arguments": s["arguments"],
-                            },
-                        }
-                        for s in tool_calls_acc.values()
-                    ],
-                }
-            )
-
-            # ---- 对应 zai_sse.py 第 183-195 行：逐个执行工具 ----
-            for s in tool_calls_acc.values():
-                name = s["name"]
-                try:
-                    args = json.loads(s["arguments"])
-                except json.JSONDecodeError as e:
-                    result = f"参数解析失败: {e}"
-                else:
-                    yield ToolStart(name=name, arguments=args)
+                # ---- 对应 zai_sse.py 第 183-195 行：逐个执行工具 ----
+                for s in tool_calls_acc.values():
+                    name = s["name"]
                     try:
-                        result = self.tool_fns[name](**args)
-                    except Exception as e:
-                        # ★ 关键设计：tool 异常当消息，不当中断
-                        # 模型会看到错误内容，有机会自我纠正
-                        result = f"工具 {name} 执行错误: {e}"
+                        args = json.loads(s["arguments"])
+                    except json.JSONDecodeError as e:
+                        result = f"参数解析失败: {e}"
+                    else:
+                        yield ToolStart(name=name, arguments=args)
+                        if name not in self.tool_fns:  # ← 先查有没有这个工具
+                            available = ", ".join(self.tool_fns)
+                            result = f"工具 {name} 不存在。可用工具：{available}"
+                        else:
+                            try:
+                                result = self.tool_fns[name](**args)
+                            except Exception as e:  # 只兜真正的执行错误
+                                result = f"工具 {name} 执行错误: {e}"
 
-                yield ToolResult(name=name, content=str(result))
-                state.messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": s["id"],
-                        "content": str(result),
-                    }
-                )
-            # 回到 for 顶部 → 带着工具结果再问 LLM
+                    yield ToolResult(name=name, content=str(result))
+                    state.messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": s["id"],
+                            "content": str(result),
+                        }
+                    )
+                # 回到 for 顶部 → 带着工具结果再问 LLM
 
-        else:
-            # for 跑满 max_turns 没 break → 死循环保护
-            # 对应 zai_sse.py 第 199 行
-            yield Error(
-                message=f"达到最大步数 {self.max_turns}，强制结束"
-            )
+            else:
+                # for 跑满 max_turns 没 break → 死循环保护
+                # 对应 zai_sse.py 第 199 行
+                yield Error(message=f"达到最大步数 {self.max_turns}，强制结束")
+        except Exception as e:
+            # 工具异常已在循环内消化，这里兜住 LLM / 流式解析异常
+            yield Error(message=f"LLM 调用失败: {e}")
 
         yield RunEnd()  # 无论如何，最后一定有 RunEnd
 

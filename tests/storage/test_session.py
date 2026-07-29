@@ -114,3 +114,28 @@ def test_delete_removes_directory(store: SessionStore, tmp_sessions_dir: Path) -
 def test_delete_missing_raises(store: SessionStore) -> None:
     with pytest.raises(SessionNotFound):
         store.delete_session("nonexistent-id")
+
+
+# ---- save ----
+def test_save_updates_messages_and_updated_at(store: SessionStore) -> None:
+    """save_session 应回写 messages 并刷新 updated_at。"""
+    import time
+
+    sid = store.create_session("a", "glm-4.7", [_sys()])
+    time.sleep(1.05)  # 时间戳精确到秒,人为 sleep 保证可比较
+    new_messages = [_sys(), _user("hi")]
+    store.save_session(sid, new_messages)
+    data = store.load_session(sid)
+    assert data["messages"] == new_messages
+    assert data["updated_at"] > data["created_at"]
+
+
+def test_save_missing_raises(store: SessionStore) -> None:
+    with pytest.raises(SessionNotFound):
+        store.save_session("nonexistent-id", [_sys()])
+
+
+def test_save_rejects_non_system_first(store: SessionStore) -> None:
+    sid = store.create_session("a", "glm-4.7", [_sys()])
+    with pytest.raises(SessionError, match="第一条必须是 system"):
+        store.save_session(sid, [_user("hi")])
