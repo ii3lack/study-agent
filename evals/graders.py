@@ -8,20 +8,15 @@ from evals.types import Grade, Grader, RunResult, Task
 
 
 def grade_write_file(task: Task, result: RunResult) -> Grade:
-    """判定 write_file 任务是否成功。
-
-    ★★★ 这个函数轮到你（学习者）实现 ★★★
-
-    规格：
-      - 金标准：result.files 里 "note.txt" 存在，且内容包含 "hello eval"
-          → passed=True, score=1.0
-      - 文件在但内容不对 → 部分分，例如 score=0.5
-      - 文件压根没有 → passed=False, score=0.0
-      - reason 写清楚为什么（看报告时好定位）
-    加分：顺手检查 result.tool_calls，确认确实是通过 write_file 做到的，
-          而不是模型嘴上说写了、其实没调工具。
-    """
-    raise NotImplementedError("轮到你了：实现 grade_write_file")
+    content = result.files.get("note.txt")  # ← 世界状态，清理前的冻结快照
+    if content is None:
+        return Grade(False, 0.0, "没生成 note.txt")
+    if "hello eval" not in content:
+        return Grade(False, 0.5, f"文件在但内容不对: {content!r}")
+    # tool_calls 只当佐证（加分项），且是 dict，用 ["name"] 取
+    used_tool = any(tc["name"] == "write_file" for tc in result.tool_calls)
+    tail = "" if used_tool else "（注意：未见 write_file 调用）"
+    return Grade(True, 1.0, "文件内容正确" + tail)
 
 
 # task.id -> grader
