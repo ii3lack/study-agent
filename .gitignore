@@ -37,12 +37,6 @@ venv/
 .DS_Store
 Thumbs.db
 
-# 个人学习资料（不入库）
-docs/superpowers/
-
-# Obsidian 知识库（个人笔记，不入库）
-vault/
-
 # Node.js 遗留
 node_modules/
 package-lock.json
