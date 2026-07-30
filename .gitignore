@@ -43,8 +43,8 @@ docs/learning/
 docs/code-review/
 docs/摸底试卷.md
 
-# Obsidian 笔记
-agent/
+# Obsidian 知识库（个人笔记，不入库）
+vault/
 
 # Node.js 遗留
 node_modules/
