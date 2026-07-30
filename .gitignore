@@ -43,6 +43,9 @@ docs/learning/
 docs/code-review/
 docs/摸底试卷.md
 
+# Obsidian 笔记
+agent/
+
 # Node.js 遗留
 node_modules/
 package-lock.json
