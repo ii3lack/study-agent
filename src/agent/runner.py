@@ -24,7 +24,7 @@ from src.agent.message import (
 )
 from src.agent.serialization import messages_to_api
 from src.agent.state import AgentState
-from src.agent.context import estimate_context_tokens
+from src.agent.context import estimate_context_tokens, window_for_api
 
 # ============================================================
 # Event 类型 —— Runner 和外部世界的唯一通信方式
@@ -124,11 +124,13 @@ class Runner:
         tool_fns: dict,  # {"read_file": read_file, ...}
         *,
         max_turns: int = 5,
+        max_tokens: int = 5000,
     ) -> None:
         self.client = client
         self.tools = tools
         self.tool_fns = tool_fns
         self.max_turns = max_turns
+        self.max_tokens = max_tokens
 
     # ---- 核心方法 ----
 
@@ -249,7 +251,7 @@ class Runner:
         response = self.client.chat(
             model=state.model,  # ← 从 state 读，不写死 "glm-4.7"
             messages=messages_to_api(
-                state.messages
+                window_for_api(state.messages, max_tokens=self.max_tokens)
             ),  # ← 出口：领域 Message → wire dict
             tools=self.tools,
             tool_choice="auto",

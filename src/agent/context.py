@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from src.agent.message import Message
+from src.agent.message import Message, UserMessage
 from src.agent.serialization import messages_to_api
 
 
@@ -24,3 +24,25 @@ def estimate_context_tokens(messages: list[Message]) -> int:
     if not messages:
         return 0  # 空上下文就是 0；别让空列表的 "[]" 外壳算成 2 个 token
     return len(json.dumps(messages_to_api(messages), ensure_ascii=False))
+
+
+def window_for_api(messages: list[Message], *, max_tokens: int) -> list[Message]:
+    """非破坏性滑动窗口：返回 [system + 最近若干完整轮]，总量 ≤ max_tokens。
+    以 UserMessage 为轮边界整段切 → 配对自动安全。"""
+    if not messages:
+        return []
+    tokens = estimate_context_tokens(messages)
+    if tokens <= max_tokens:
+        return messages
+    system_message = messages[0]
+    # ① 找出每一轮的起点：所有 UserMessage 的下标
+    starts = [i for i, m in enumerate(messages) if isinstance(m, UserMessage)]
+    if not starts:
+        return [system_message]
+    for i in starts:
+        suffix = messages[i:]
+        new_messages = [system_message, *suffix]
+        if estimate_context_tokens(new_messages) <= max_tokens:
+            return new_messages
+
+    return [system_message, *messages[starts[-1] :]]
