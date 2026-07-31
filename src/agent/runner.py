@@ -24,6 +24,7 @@ from src.agent.message import (
 )
 from src.agent.serialization import messages_to_api
 from src.agent.state import AgentState
+from src.agent.context import estimate_context_tokens
 
 # ============================================================
 # Event 类型 —— Runner 和外部世界的唯一通信方式
@@ -35,6 +36,15 @@ from src.agent.state import AgentState
 @dataclass
 class Event:
     """所有事件的基类。"""
+
+
+@dataclass
+class ContextStats(Event):
+    """当前上下文统计信息。"""
+
+    turn: int
+    messages: int
+    tokens: int
 
 
 @dataclass
@@ -142,6 +152,11 @@ class Runner:
         try:
             for turn in range(self.max_turns):
                 yield TurnStart(turn=turn)
+                yield ContextStats(
+                    turn=turn,
+                    messages=len(state.messages),
+                    tokens=estimate_context_tokens(state.messages),
+                )
 
                 # 调一次 LLM，流式拿 token，同时累积 tool_calls
                 for token in self._stream_one_turn(state):
@@ -233,13 +248,14 @@ class Runner:
 
         response = self.client.chat(
             model=state.model,  # ← 从 state 读，不写死 "glm-4.7"
-            messages=messages_to_api(state.messages),  # ← 出口：领域 Message → wire dict
+            messages=messages_to_api(
+                state.messages
+            ),  # ← 出口：领域 Message → wire dict
             tools=self.tools,
             tool_choice="auto",
             stream=True,
-            thinking={"type": "enabled"},
-            max_tokens=65536,
-            temperature=1.0,
+            reasoning_effort="high",
+            extra_body={"thinking": {"type": "enabled"}},
         )
 
         for chunk in response:

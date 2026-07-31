@@ -2,6 +2,7 @@
 """主程序入口"""
 
 import os
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -43,29 +44,14 @@ def main():
     console.print("Start Study AI Agent")
 
     # 长寿命组件在启动时创建一次。
-    # 此前在循环内每轮重建：对话记忆每轮被丢弃，且每轮向磁盘
-    # 泄漏一个只含 system 消息的孤儿会话目录。
     client = Client()
     store = SessionStore(sessions_dir=Path.cwd() / "storage" / "sessions")
+    model: str | None = os.getenv("MODEL", "")
+    print(f"Using model: {model}")
 
-    s_id = store.create_session(
-        name="Study AI Agent",
-        model=os.getenv("MODEL", "glm-5.2"),
-        messages=[SystemMessage(content=DEFAULT_SYSTEM_PROMPT)],
-    )
-    s_info = store.load_session(s_id)
-
-    # messages 只含 system；用户消息由 runner.run(state, user_input)
-    # 负责追加一次 —— 不要在初始列表里再放一份，否则会重复。
-    state = AgentState(
-        session_id=s_info["session_id"],
-        created_at=s_info["created_at"],
-        updated_at=s_info["updated_at"],
-        model=s_info["model"],
-        system_prompt=DEFAULT_SYSTEM_PROMPT,
-        messages=[SystemMessage(content=DEFAULT_SYSTEM_PROMPT)],
-        metadata={},
-    )
+    # 让用户挑一个旧会话恢复，或新建。恢复旧会话才拿得到大上下文，
+    # 用来压测上下文管理（度量 / 压缩 / 缓存权衡）。
+    state = _resume_or_create(store, cli, model)
     runner = Runner(
         client=client,
         tools=[
@@ -87,6 +73,30 @@ def main():
             store.save_session(state.session_id, state.messages)
     except (KeyboardInterrupt, EOFError):
         console.print("Study AI Agent is stopping...")
+
+
+def _resume_or_create(store: SessionStore, cli: AgentCLI, model: str) -> AgentState:
+    """启动时：列出历史会话让用户挑一个恢复，或新建。"""
+    chosen_id = cli.choose_session(store.list_sessions())
+
+    if chosen_id is None:  # 新建
+        name = f"会话 {datetime.now():%Y-%m-%d %H:%M:%S}"
+        chosen_id = store.create_session(
+            name=name,
+            model=model,
+            messages=[SystemMessage(content=DEFAULT_SYSTEM_PROMPT)],
+        )
+
+    # load_session 已把 messages 反序列化成 Message 对象，直接拿来构造 state。
+    info = store.load_session(chosen_id)
+    return AgentState(
+        session_id=info["session_id"],
+        created_at=info["created_at"],
+        updated_at=info["updated_at"],
+        model=model,
+        system_prompt=info["messages"][0].content,  # 取实际存着的 system 内容
+        messages=info["messages"],
+    )
 
 
 if __name__ == "__main__":

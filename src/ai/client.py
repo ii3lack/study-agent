@@ -2,15 +2,16 @@
 """ai 客户端"""
 
 import os
-from zai import ZhipuAiClient
+from openai import OpenAI
 
 
 class Client:
     """ai provider。"""
 
     def __init__(self):
-        self.client = ZhipuAiClient(
+        self.client = OpenAI(
             api_key=os.getenv("API_KEY"),
+            base_url=os.getenv("BASE_URL"),
         )
 
     def chat(self, *args, **kwargs):

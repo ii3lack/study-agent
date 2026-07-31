@@ -24,7 +24,9 @@ from src.agent.runner import (
     ToolResult,
     ToolStart,
     UserToken,
+    ContextStats,
 )
+from src.storage.session import SessionInfo
 
 # 工具结果超过这个长度就截断，避免刷屏
 _MAX_RESULT_CHARS = 800
@@ -71,12 +73,42 @@ class AgentCLI:
             self._last_kind = None
         elif isinstance(event, RunEnd):
             self._end_line()
+        elif isinstance(event, ContextStats):
+            self._render_context_stats(event)
         # TurnStart / TurnEnd：暂不可视化，留作扩展（如轮次进度条）
 
     def render_all(self, events: Iterable[Event]) -> None:
         """消费整个事件流。"""
         for event in events:
             self.render(event)
+
+    def choose_session(self, sessions: list[SessionInfo]) -> str | None:
+        """展示历史会话让用户挑一个恢复；返回 session_id，新建返回 None。
+
+        这是 CLI 唯一一处"主动问用户"的地方（其余都是被动渲染事件）。
+        恢复旧会话是为了拿到大上下文，好压测上下文管理。
+        """
+        if not sessions:
+            self.console.print("[dim]暂无历史会话，将新建。[/dim]")
+            return None
+
+        self.console.print(
+            Panel("历史会话（按最近更新排序）", border_style="blue", expand=False)
+        )
+        for i, s in enumerate(sessions, 1):
+            self.console.print(
+                f"  [bold]{i}[/bold]. {s.session_name}  "
+                f"[dim]· {s.model} · 更新 {s.updated_at}[/dim]"
+            )
+        self.console.print("  [bold]0[/bold]. ＋ 新建会话")
+
+        while True:
+            choice = self.console.input("选哪个（回车=新建）: ").strip()
+            if choice in ("", "0"):
+                return None
+            if choice.isdigit() and 1 <= int(choice) <= len(sessions):
+                return sessions[int(choice) - 1].session_id
+            self.console.print(f"[red]输入 0~{len(sessions)} 的数字[/red]")
 
     # ---- 内部 ----
 
@@ -131,3 +163,13 @@ class AgentCLI:
         )
         self._mid_line = False
         self._last_kind = None
+
+    def _render_context_stats(self, stats: ContextStats) -> None:
+        self.console.print(
+            Panel(
+                f"[第{stats.turn + 1}轮]上下文：{stats.messages} 条消息 · ≈ {stats.tokens} 个 token",
+                title="Context",
+                border_style="yellow",
+                expand=False,
+            )
+        )
