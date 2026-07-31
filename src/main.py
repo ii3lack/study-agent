@@ -27,6 +27,7 @@ from src.tools.file_tools import (
     write_file,
     write_file_tool,
 )
+from src.agent.message import SystemMessage
 
 TOOL_FUNCTIONS = {
     "read_file": read_file,
@@ -50,7 +51,7 @@ def main():
     s_id = store.create_session(
         name="Study AI Agent",
         model=os.getenv("MODEL", "glm-5.2"),
-        messages=[{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}],
+        messages=[SystemMessage(content=DEFAULT_SYSTEM_PROMPT)],
     )
     s_info = store.load_session(s_id)
 
@@ -62,7 +63,7 @@ def main():
         updated_at=s_info["updated_at"],
         model=s_info["model"],
         system_prompt=DEFAULT_SYSTEM_PROMPT,
-        messages=[{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}],
+        messages=[SystemMessage(content=DEFAULT_SYSTEM_PROMPT)],
         metadata={},
     )
     runner = Runner(

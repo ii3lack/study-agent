@@ -4,9 +4,16 @@ from datetime import datetime
 
 import pytest
 
+from src.agent.message import (
+    AssistantMessage,
+    SystemMessage,
+    ToolCall,
+    ToolMessage,
+    UserMessage,
+)
 from src.agent.state import (
-    AgentState,
     DEFAULT_SYSTEM_PROMPT,
+    AgentState,
     StateInvariantError,
 )
 
@@ -22,7 +29,7 @@ def test_create_minimal_state():
         updated_at=_now(),
         model="glm-4.7",
         system_prompt=DEFAULT_SYSTEM_PROMPT,
-        messages=[{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}],
+        messages=[SystemMessage(content=DEFAULT_SYSTEM_PROMPT)],
         metadata={},
     )
     assert state.session_id == "abc"
@@ -31,6 +38,7 @@ def test_create_minimal_state():
 
 
 def test_first_message_must_be_system():
+    """类型化之后这条照样 raise —— "第一条是 system"是位置性质，类型管不着。"""
     with pytest.raises(StateInvariantError, match="第一条必须是 system"):
         AgentState(
             session_id="x",
@@ -38,13 +46,13 @@ def test_first_message_must_be_system():
             updated_at=_now(),
             model="glm-4.7",
             system_prompt="x",
-            messages=[{"role": "user", "content": "hi"}],
+            messages=[UserMessage(content="hi")],  # ← 第一条不是 system
             metadata={},
         )
 
 
 def test_tool_calls_must_have_matching_tool_results():
-    """assistant 带 tool_calls → 后面必须有 role=tool 配对。"""
+    """类型化之后这条照样 raise —— 配对是关系性质，类型管不着。"""
     with pytest.raises(StateInvariantError, match="tool_call_id"):
         AgentState(
             session_id="x",
@@ -53,20 +61,13 @@ def test_tool_calls_must_have_matching_tool_results():
             model="glm-4.7",
             system_prompt="x",
             messages=[
-                {"role": "system", "content": "x"},
-                {"role": "user", "content": "hi"},
-                {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": "tc1",
-                            "type": "function",
-                            "function": {"name": "read_file", "arguments": "{}"},
-                        }
-                    ],
-                },
-                # 缺 tool 消息
+                SystemMessage(content="x"),
+                UserMessage(content="hi"),
+                AssistantMessage(
+                    content="",
+                    tool_calls=(ToolCall(id="tc1", name="read_file", arguments="{}"),),
+                ),
+                # 缺 ToolMessage
             ],
             metadata={},
         )
@@ -80,21 +81,14 @@ def test_tool_calls_match_succeeds():
         model="glm-4.7",
         system_prompt="x",
         messages=[
-            {"role": "system", "content": "x"},
-            {"role": "user", "content": "hi"},
-            {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [
-                    {
-                        "id": "tc1",
-                        "type": "function",
-                        "function": {"name": "read_file", "arguments": "{}"},
-                    }
-                ],
-            },
-            {"role": "tool", "tool_call_id": "tc1", "content": "ok"},
-            {"role": "assistant", "content": "done"},
+            SystemMessage(content="x"),
+            UserMessage(content="hi"),
+            AssistantMessage(
+                content="",
+                tool_calls=(ToolCall(id="tc1", name="read_file", arguments="{}"),),
+            ),
+            ToolMessage(tool_call_id="tc1", content="ok"),
+            AssistantMessage(content="done"),
         ],
         metadata={},
     )
@@ -102,14 +96,14 @@ def test_tool_calls_match_succeeds():
 
 
 def test_json_roundtrip():
-    """AgentState 应能 JSON 序列化/反序列化不丢字段。"""
+    """AgentState 应能 JSON 序列化/反序列化不丢字段（经 mapper 走 wire 形状）。"""
     state = AgentState(
         session_id="abc",
         created_at=_now(),
         updated_at=_now(),
         model="glm-4.7",
         system_prompt="x",
-        messages=[{"role": "system", "content": "x"}],
+        messages=[SystemMessage(content="x")],
         metadata={"trace_id": "t-1"},
     )
     j = state.to_json()
@@ -126,6 +120,6 @@ def test_metadata_default_is_empty_dict():
         updated_at=_now(),
         model="glm-4.7",
         system_prompt="x",
-        messages=[{"role": "system", "content": "x"}],
+        messages=[SystemMessage(content="x")],
     )
     assert state.metadata == {}

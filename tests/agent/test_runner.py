@@ -23,6 +23,7 @@ from src.agent.runner import (
     TurnStart,
     UserToken,
 )
+from src.agent.message import AssistantMessage, SystemMessage, ToolMessage, UserMessage
 from src.agent.state import AgentState, DEFAULT_SYSTEM_PROMPT
 
 # ============================================================
@@ -113,7 +114,7 @@ def _state() -> AgentState:
         updated_at=_now(),
         model="glm-4.7",
         system_prompt=DEFAULT_SYSTEM_PROMPT,
-        messages=[{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}],
+        messages=[SystemMessage(content=DEFAULT_SYSTEM_PROMPT)],
     )
 
 
@@ -151,9 +152,9 @@ def test_no_tool_calls_exits_after_one_turn():
 
     # 检查 messages：system + user + assistant = 3 条
     assert len(state.messages) == 3
-    assert state.messages[1] == {"role": "user", "content": "hi"}
-    assert state.messages[2]["role"] == "assistant"
-    assert state.messages[2]["content"] == "你好！"
+    assert state.messages[1] == UserMessage(content="hi")
+    assert isinstance(state.messages[2], AssistantMessage)
+    assert state.messages[2].content == "你好！"
 
     # chat() 只被调了 1 次（1 轮就退出了）
     assert client._call_count == 1
@@ -205,15 +206,15 @@ def test_tool_calls_executes_and_continues():
     #   system + user + assistant(带tool_calls) + tool + assistant(最终) = 5 条
     assert len(state.messages) == 5
     # assistant 带 tool_calls
-    assert state.messages[2]["role"] == "assistant"
-    assert "tool_calls" in state.messages[2]
+    assert isinstance(state.messages[2], AssistantMessage)
+    assert state.messages[2].tool_calls  # 带 tool_calls
     # tool 消息
-    assert state.messages[3]["role"] == "tool"
-    assert state.messages[3]["tool_call_id"] == "tc-1"
-    assert state.messages[3]["content"] == "echoed:hello"
+    assert isinstance(state.messages[3], ToolMessage)
+    assert state.messages[3].tool_call_id == "tc-1"
+    assert state.messages[3].content == "echoed:hello"
     # 最终 assistant
-    assert state.messages[4]["role"] == "assistant"
-    assert state.messages[4]["content"] == "工具说了 hello"
+    assert isinstance(state.messages[4], AssistantMessage)
+    assert state.messages[4].content == "工具说了 hello"
 
     # chat() 被调了 2 次（2 轮）
     assert client._call_count == 2
@@ -249,14 +250,14 @@ def test_tool_exception_becomes_message():
     assert any(isinstance(e, RunEnd) for e in events)
 
     # tool 消息里包含错误信息
-    tool_msgs = [m for m in state.messages if m.get("role") == "tool"]
+    tool_msgs = [m for m in state.messages if isinstance(m, ToolMessage)]
     assert len(tool_msgs) == 1
-    assert "boom" in tool_msgs[0]["content"]
-    assert "执行错误" in tool_msgs[0]["content"]
+    assert "boom" in tool_msgs[0].content
+    assert "执行错误" in tool_msgs[0].content
 
     # 循环继续了：模型看到了错误，给出了最终回答
-    assert state.messages[-1]["role"] == "assistant"
-    assert state.messages[-1]["content"] == "抱歉，工具出错了"
+    assert isinstance(state.messages[-1], AssistantMessage)
+    assert state.messages[-1].content == "抱歉，工具出错了"
 
 
 # ============================================================

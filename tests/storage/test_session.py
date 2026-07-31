@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from src.agent.message import SystemMessage, UserMessage
 from src.storage.session import (
     SessionError,
     SessionInfo,
@@ -20,12 +21,12 @@ def store(tmp_sessions_dir: Path) -> SessionStore:
     return SessionStore(sessions_dir=tmp_sessions_dir)
 
 
-def _sys(content: str = "你是助手") -> dict:
-    return {"role": "system", "content": content}
+def _sys(content: str = "你是助手") -> SystemMessage:
+    return SystemMessage(content=content)
 
 
-def _user(content: str) -> dict:
-    return {"role": "user", "content": content}
+def _user(content: str) -> UserMessage:
+    return UserMessage(content=content)
 
 
 # ---- create ----

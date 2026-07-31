@@ -16,6 +16,13 @@ import json
 from dataclasses import dataclass
 from typing import Iterator
 
+from src.agent.message import (
+    AssistantMessage,
+    ToolCall,
+    ToolMessage,
+    UserMessage,
+)
+from src.agent.serialization import messages_to_api
 from src.agent.state import AgentState
 
 # ============================================================
@@ -127,7 +134,7 @@ class Runner:
         """
         # ---- 对应 zai_sse.py 第 208 行：用户消息入列 ----
         if user_input is not None:
-            state.messages.append({"role": "user", "content": user_input})
+            state.messages.append(UserMessage(content=user_input))
 
         # ---- 对应 zai_sse.py 第 145 行：for _turn in range(max_turns) ----
         # ★ try 包住整个循环：LLM 调用抛异常（网络超时 / 429 / 5xx）时
@@ -153,32 +160,24 @@ class Runner:
                 # ---- 对应 zai_sse.py 第 158-162 行：无工具 = 最终答案 ----
                 if not tool_calls_acc:
                     state.messages.append(
-                        {
-                            "role": "assistant",
-                            "content": answer,
-                            "reasoning_content": reasoning,
-                        }
+                        AssistantMessage(content=answer, reasoning_content=reasoning)
                     )
                     yield TurnEnd(turn=turn)
                     break  # ← 自然退出
 
                 # ---- 对应 zai_sse.py 第 165-181 行：存 assistant + tool_calls ----
+                # 直接构造领域对象，不在领域层拼 wire 字典。
+                # 嵌套的 wire 形状（type / function）留给 serialization 在出口还原。
                 state.messages.append(
-                    {
-                        "role": "assistant",
-                        "content": answer,
-                        "tool_calls": [
-                            {
-                                "id": s["id"],
-                                "type": "function",
-                                "function": {
-                                    "name": s["name"],
-                                    "arguments": s["arguments"],
-                                },
-                            }
+                    AssistantMessage(
+                        content=answer,
+                        tool_calls=tuple(
+                            ToolCall(
+                                id=s["id"], name=s["name"], arguments=s["arguments"]
+                            )
                             for s in tool_calls_acc.values()
-                        ],
-                    }
+                        ),
+                    )
                 )
 
                 # ---- 对应 zai_sse.py 第 183-195 行：逐个执行工具 ----
@@ -201,11 +200,7 @@ class Runner:
 
                     yield ToolResult(name=name, content=str(result))
                     state.messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": s["id"],
-                            "content": str(result),
-                        }
+                        ToolMessage(tool_call_id=s["id"], content=str(result))
                     )
                 # 回到 for 顶部 → 带着工具结果再问 LLM
 
@@ -238,7 +233,7 @@ class Runner:
 
         response = self.client.chat(
             model=state.model,  # ← 从 state 读，不写死 "glm-4.7"
-            messages=state.messages,
+            messages=messages_to_api(state.messages),  # ← 出口：领域 Message → wire dict
             tools=self.tools,
             tool_choice="auto",
             stream=True,
@@ -266,7 +261,7 @@ class Runner:
             # ---- 工具调用碎片（对应 zai_sse.py 第 109-128 行）----
             # 流式协议下 tool_calls 是分片到达的：
             #   第 1 片带 id + name，后续片带 arguments 碎片
-            # 用 index 做 key 累积成完整调用
+            #   用 index 做 key 累积成完整调用
             if delta.tool_calls:
                 for tc in delta.tool_calls:
                     slot = self._tool_calls_acc.setdefault(

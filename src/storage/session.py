@@ -16,6 +16,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from src.agent.message import Message, SystemMessage
+from src.agent.serialization import messages_from_api, messages_to_api
+
 
 class SessionError(Exception):
     """会话错误。"""
@@ -51,7 +54,7 @@ class SessionStore:
         self,
         name: str,
         model: str,
-        messages: list[dict],
+        messages: list[Message],
     ) -> str:
         """创建会话,返回 session_id。
 
@@ -59,7 +62,7 @@ class SessionStore:
         """
         if not messages:
             raise SessionError("messages 不能为空")
-        if messages[0].get("role") != "system":
+        if not isinstance(messages[0], SystemMessage):
             raise SessionError("messages 第一条必须是 system")
 
         session_id = uuid.uuid4().hex
@@ -72,7 +75,8 @@ class SessionStore:
             "created_at": _now(),
             "updated_at": _now(),
             "model": model,
-            "messages": messages,
+            # 落盘前把领域 Message 还原成 wire dict，index.json 永远是 wire 形状
+            "messages": messages_to_api(messages),
         }
         (path / "index.json").write_text(
             json.dumps(data, ensure_ascii=False, indent=2),
@@ -101,27 +105,29 @@ class SessionStore:
         return items
 
     def load_session(self, session_id: str) -> dict:
-        """加载会话原始数据(messages、name、model 等)。"""
+        """加载会话数据。messages 从 wire dict 还原成领域 Message，其余字段原样返回。"""
         index = self.sessions_dir / session_id / "index.json"
         if not index.exists():
             raise SessionNotFound(f"Session {session_id} not found")
-        return json.loads(index.read_text(encoding="utf-8"))
+        data = json.loads(index.read_text(encoding="utf-8"))
+        data["messages"] = messages_from_api(data["messages"])
+        return data
 
-    def save_session(self, session_id: str, messages: list[dict]) -> None:
+    def save_session(self, session_id: str, messages: list[Message]) -> None:
         """回写会话消息,并刷新 updated_at。
 
         约束与 create_session 一致:messages 至少 1 条,且第一条 role 必须是 system。
         """
         if not messages:
             raise SessionError("messages 不能为空")
-        if messages[0].get("role") != "system":
+        if not isinstance(messages[0], SystemMessage):
             raise SessionError("messages 第一条必须是 system")
 
         index = self.sessions_dir / session_id / "index.json"
         if not index.exists():
             raise SessionNotFound(f"Session {session_id} not found")
         data = json.loads(index.read_text(encoding="utf-8"))
-        data["messages"] = messages
+        data["messages"] = messages_to_api(messages)
         data["updated_at"] = _now()
         index.write_text(
             json.dumps(data, ensure_ascii=False, indent=2),

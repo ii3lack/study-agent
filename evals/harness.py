@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.agent.runner import Runner, ToolStart
+from src.agent.message import AssistantMessage, Message, SystemMessage
 from src.agent.state import AgentState, DEFAULT_SYSTEM_PROMPT
 from src.tools.file_tools import (
     edit_file,
@@ -91,15 +92,15 @@ def _fresh_state(model: str) -> AgentState:
         updated_at=now,
         model=model,
         system_prompt=DEFAULT_SYSTEM_PROMPT,
-        messages=[{"role": "system", "content": DEFAULT_SYSTEM_PROMPT}],
+        messages=[SystemMessage(content=DEFAULT_SYSTEM_PROMPT)],
     )
 
 
-def _last_assistant_content(messages: list[dict]) -> str:
+def _last_assistant_content(messages: list[Message]) -> str:
     """取最后一条有正文的 assistant 消息作为最终回答。"""
     for msg in reversed(messages):
-        if msg.get("role") == "assistant" and msg.get("content"):
-            return msg["content"]
+        if isinstance(msg, AssistantMessage) and msg.content:
+            return msg.content
     return ""
 
 
