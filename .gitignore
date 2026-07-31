@@ -21,7 +21,7 @@ venv/
 .env
 
 # 工具缓存
-.ruff_cache/
+.ruff_cache
 
 # AI 工作目录（工具操作的文件空间）
 /work_space/
