@@ -1,6 +1,6 @@
 # Study Agent
 
-从零学习 AI Agent 应用开发的实战项目。基于智谱 GLM 模型，用 Python 手写一个具备工具调用能力的 ReAct Agent，理解 Agent 框架的核心设计思想。
+从零学习 AI Agent 应用开发的实战项目。用 Python 手写一个具备工具调用能力的 ReAct Agent（经 OpenAI 兼容接口调用大模型，默认 GLM），理解 Agent 框架的核心设计思想。
 
 ## 这个项目是什么
 
@@ -21,9 +21,10 @@ src/
 │   ├── runner.py           # ReAct 循环核心（事件流驱动，yield Event）
 │   ├── state.py            # AgentState + 消息不变式校验（非空 / 首位 / 配对）
 │   ├── message.py          # 领域消息类型（Message 联合，纯领域，不认识 wire）
-│   └── serialization.py    # 边界 mapper：wire dict ↔ Message（唯一认识 wire 的地方）
+│   ├── serialization.py    # 边界 mapper：wire dict ↔ Message（唯一认识 wire 的地方）
+│   └── context.py          # 上下文工程：token 度量 + 非破坏性滑动窗口（配对安全）
 ├── ai/
-│   └── client.py           # 智谱 API 封装
+│   └── client.py           # 大模型客户端（OpenAI 兼容，base_url 可配）
 ├── cli/
 │   └── tui.py              # Rich 终端渲染（订阅 Runner 事件）
 ├── storage/
@@ -38,7 +39,7 @@ evals/                      # Eval 框架
 ├── harness.py              # run_task()：跑任务 + 收集结果
 └── run_eval.py             # CLI 入口：跑全部任务，输出报告
 
-tests/                      # 测试（pytest，共 40 个）
+tests/                      # 测试（pytest，共 45 个）
 ├── agent/test_runner.py    # Runner 生命周期测试（6 个）
 ├── agent/test_state.py     # AgentState 不变量测试（6 个）
 ├── storage/test_session.py # SessionStore CRUD 测试（11 个）
@@ -56,7 +57,7 @@ uv sync
 
 # 配置 API Key
 cp .env.example .env
-# 编辑 .env，填入 API_KEY（可选 MODEL，默认 glm-5.2）
+# 编辑 .env，填入 API_KEY、BASE_URL（OpenAI 兼容端点），可选 MODEL（默认 glm-5.2）
 
 # 运行 Agent
 python -m src.main
@@ -88,6 +89,7 @@ Runner 只 yield Event，不渲染、不持久化、不 import 具体 Client。
 | Event | 含义 |
 |---|---|
 | `TurnStart` | 第 N 轮开始 |
+| `ContextStats` | 本轮上下文统计（消息数 / token 估算） |
 | `UserToken` | 模型吐了一个 token（reasoning / content） |
 | `ToolStart` | 即将调用工具 |
 | `ToolResult` | 工具返回结果 |
@@ -105,6 +107,12 @@ Runner 只 yield Event，不渲染、不持久化、不 import 具体 Client。
 
 由此，dict 只被允许出现在三个地方：**调 `client.chat` 的出口**、**会话落盘 / 读盘**、以及 **runner 内部的流式累积器**（临时态，不跨边界、不带不变量，故刻意不类型化）。
 
+### 上下文管理（context.py）
+
+- **度量**：`estimate_context_tokens` 把消息还原成"即将发出的 wire JSON"数字符（≈token），每轮发 `ContextStats` 事件，让上下文增长"被看见"。
+- **滑动窗口**：`window_for_api` 在调 LLM 前取"system + 最近若干完整轮"的**非破坏性视图**（state 与磁盘全史不动）。以 `UserMessage` 为轮边界整段切，**tool_call↔tool 配对天然不切坏**。这是上下文管理的第一刀（"丢"）。
+- **下一刀（进行中）**：摘要压缩 compaction——用摘要替代"直接丢"，设计见 `docs/specs/compaction.md`。
+
 ### 工具沙箱
 
 所有文件操作限制在 `work_space/` 和 `storage/` 内。通过 `resolve()` + `relative_to()` 阻止 `../` 路径穿越。
@@ -120,6 +128,8 @@ Runner 只 yield Event，不渲染、不持久化、不 import 具体 Client。
 - **工具调用 + 工具沙箱**（file_tools.py）+ max_turns 死循环保护
 - **会话存储**（session.py，JSON 持久化）
 - **领域消息类型 `Message` + 序列化边界**（message.py / serialization.py，dict↔Message）
+- **会话恢复 / 新建**（启动列出历史会话供恢复，拿大上下文压测上下文管理）
+- **上下文度量 + 滑动窗口**（context.py：ContextStats 事件 + 配对安全的窗口）
 - **Eval 骨架**（evals/，世界状态判据）+ 流式输出
 
 ### Agent 知识地图（✅ 已做 / 🟡 部分 / 🔲 未做）
@@ -131,8 +141,8 @@ Runner 只 yield Event，不渲染、不持久化、不 import 具体 Client。
 | **行动能力** | 工具调用 + **工具描述设计** | 接地到真实动作；模型读着描述选工具 | 🟡 |
 | | 并行工具调用 | 一轮多个工具，串行等 = 白拉长延迟 | 🔲 |
 | | MCP（Model Context Protocol） | 工具接入标准化 | 🔲 |
-| **上下文 / 记忆** | **上下文工程**（窗口管理 / caching / token 成本） | 窗口有限 + 每次全量重发 = 第一约束 | 🔲 |
-| | 压缩 / 摘要（compaction） | 对话一长就爆窗口、烧钱 | 🔲 |
+| **上下文 / 记忆** | **上下文工程**（窗口管理 / caching / token 成本） | 窗口有限 + 每次全量重发 = 第一约束 | 🟡 度量+窗口✅ |
+| | 压缩 / 摘要（compaction） | 对话一长就爆窗口、烧钱 | 🟡 设计中 |
 | | 长期记忆 / RAG 检索 | 私有/最新数据 + 跨会话记忆 | 🔲 |
 | **可靠性** | 结构化输出 + 重试恢复 | 模型会吐坏 JSON，要兜住 | 🟡 |
 | | 护栏 / **prompt injection 防护** | 工具结果是不可信输入，能劫持模型 | 🟡 |
@@ -143,7 +153,7 @@ Runner 只 yield Event，不渲染、不持久化、不 import 具体 Client。
 
 ### 主线（推荐学习顺序）
 
-1. **上下文工程** ← 当前。先**看见问题**：给 agent 加 token 计数，亲眼看上下文怎么失控；再做 prompt caching → 截断策略 → 摘要压缩。
+1. **上下文工程** ← 当前。度量（✅ 能看见）→ 滑动窗口（✅ 配对安全的第一刀）→ **摘要压缩**（🟡 进行中，见 `docs/specs/compaction.md`）→ caching 权衡。
 2. **长期记忆 / RAG**：接上空着的 `storage/memory/`，让 agent 跨会话记事、按需检索（第一站的自然延伸：装不下的外置 + 检索）。
 3. **Langfuse trace**（穿插）：调试之眼，顺带验证"事件流驱动"这个架构赌注。
 4. **往后**：并行工具调用、prompt injection 防护、MCP、多 Agent。
@@ -153,7 +163,7 @@ Runner 只 yield Event，不渲染、不持久化、不 import 具体 Client。
 ## Tech Stack
 
 - **Python 3.11+**
-- **智谱 GLM**（默认 glm-5.2，经 `MODEL` 环境变量配置）— 通过 zai-sdk 调用
+- **大模型**（默认 glm-5.2，经 `MODEL` 配置）— 通过 **OpenAI 兼容接口**调用（openai SDK + `BASE_URL`）
 - **Rich** — 终端 UI 渲染
 - **pytest** — 测试框架
 - **Langfuse** — 可观测性（已引入，待集成）
